@@ -1,0 +1,8 @@
+{
+  "appId": "com.mawariton.finanzas",
+  "appName": "Finanzas",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  }
+}

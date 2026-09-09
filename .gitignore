@@ -3,3 +3,15 @@ node_modules/
 *.log
 debug/
 releases/
+
+# Android (Capacitor)
+android/.gradle/
+android/local.properties
+android/app/build/
+android/build/
+android/captures/
+android/.idea/
+*.apk
+
+# Generado por `npx cap copy` (se regenera desde la raíz)
+www/
