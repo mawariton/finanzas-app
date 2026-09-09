@@ -10,171 +10,124 @@ const Expense = {
     { name: 'Vivienda', icon: '&#127968;' },
     { name: 'Otros', icon: '&#128203;' }
   ],
-
+  icon(name) {
+    return (Expense.CATEGORIES.find(c => c.name === name) || Expense.CATEGORIES[Expense.CATEGORIES.length - 1]).icon;
+  },
   async add(data) {
     data.date = data.date || new Date().toISOString().slice(0, 10);
-    if (data.type === 'gold') {
-      data.goldAmount = parseFloat(data.goldAmount) || 0;
-      data.brlEquivalent = await Gold.goldToBRL(data.goldAmount);
-    } else {
-      data.amount = parseFloat(data.amount) || 0;
-    }
     return DB.add(StoreNames.EXPENSES, data);
   },
-
   async getAll() {
     return DB.getAll(StoreNames.EXPENSES);
   },
-
   async delete(id) {
     return DB.delete(StoreNames.EXPENSES, id);
-  },
-
-  async getMonthlyTotal(year, month) {
-    const all = await DB.getAll(StoreNames.EXPENSES);
-    let totalBRL = 0;
-    let totalGold = 0;
-    for (const exp of all) {
-      if (exp.type === 'gold') totalGold += parseFloat(exp.goldAmount || 0);
-      else totalBRL += parseFloat(exp.amount || 0);
-    }
-    return { totalBRL, totalGold };
-  },
-
-  getTotalForMonth(records, yearMonth) {
-    let total = { brl: 0, gold: 0 };
-    for (const r of records) {
-      if (r.date && r.date.startsWith(yearMonth)) {
-        if (r.type === 'gold') total.gold += parseFloat(r.goldAmount || 0);
-        else total.brl += parseFloat(r.amount || 0);
-      }
-    }
-    return total;
-  },
-
-  getCategoriesSummary(records, dateFrom, dateTo) {
-    const byCategory = {};
-    for (const r of records) {
-      if (dateFrom && r.date < dateFrom) continue;
-      if (dateTo && r.date > dateTo) continue;
-      const cat = r.category || 'Otros';
-      if (!byCategory[cat]) byCategory[cat] = { brl: 0, gold: 0 };
-      if (r.type === 'gold') byCategory[cat].gold += parseFloat(r.goldAmount || 0);
-      else byCategory[cat].brl += parseFloat(r.amount || 0);
-    }
-    return byCategory;
   }
 };
 
-function renderExpensePage() {
+async function renderExpensePage() {
   const container = document.getElementById('page-expenses');
+  const records = await Expense.getAll();
+  const summary = await Gold.getMonthlyTotal(records, currentMonthKey());
+
+  const cfg = await Budget.get();
+  const spent = await Budget.monthSpent(records, currentMonthKey());
+  const st = Budget.status(spent.total, cfg.total);
+
   container.innerHTML = `
     <div class="card">
-      <div class="card-header"><h3>Resumen de gastos</h3></div>
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value" id="expense-total-brl">R$ 0,00</div>
-          <div class="stat-label">Total en BRL</div>
+      <div class="card-header"><h3>Presupuesto del mes</h3></div>
+      ${cfg.total > 0 ? `
+        <div class="stat-value">${App.mask(fmtBRL(spent.total))}</div>
+        <div class="stat-label">de ${App.mask(fmtBRL(cfg.total))} · ${spent.total > 0 ? Math.round(spent.total / cfg.total * 100) : 0}% usado</div>
+        <div class="budget-track"><div class="budget-fill ${st.cls}" style="width:${st.pct}%"></div></div>
+        ${Budget.getCatsTitleList(cfg.cats).map(c => `
+          <div class="budget-caption">
+            <span>${esc(c.name)}</span>
+            <span>${App.mask(fmtBRL(spent.byCat[c.name] || 0))} / ${App.mask(fmtBRL(c.amount))}</span>
+          </div>
+          <div class="budget-track" style="height:5px"><div class="budget-fill ${Budget.status(spent.byCat[c.name] || 0, c.amount).cls}" style="width:${Budget.status(spent.byCat[c.name] || 0, c.amount).pct}%"></div></div>
+        `).join('')}
+      ` : `
+        <div class="empty-state" style="padding:20px">
+          <p>Sin presupuesto definido. Regístralo en <b>Configuración</b>.</p>
         </div>
-        <div class="stat-card">
-          <div class="stat-value stat-gold" id="expense-total-gold">0,000 g</div>
-          <div class="stat-label">Total en Oro</div>
-        </div>
-      </div>
-      <form class="form-row" style="margin-top:12px" id="expense-filter-form">
-        <div class="form-group" style="margin-bottom:0">
-          <label>Desde</label>
-          <input type="date" id="expense-filter-from">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>Hasta</label>
-          <input type="date" id="expense-filter-to">
-        </div>
-      </form>
+      `}
     </div>
-    <div class="card">
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">${App.mask(fmtBRL(summary.brl))}</div>
+        <div class="stat-label">Gastos este mes (BRL)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value stat-gold">${App.mask(fmtGrams(summary.gold))}</div>
+        <div class="stat-label">Gastos este mes (Oro)</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
       <div class="card-header"><h3>Gastos registrados</h3></div>
-      <ul class="transaction-list" id="expense-list"></ul>
+      <form style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:6px" id="exp-filter">
+        <div class="form-group" style="margin-bottom:8px"><label>Desde</label><input type="date" id="exp-from"></div>
+        <div class="form-group" style="margin-bottom:8px"><label>Hasta</label><input type="date" id="exp-to"></div>
+      </form>
+      <div id="exp-list-wrap"></div>
     </div>
   `;
 
-  const fromInput = document.getElementById('expense-filter-from');
-  const toInput = document.getElementById('expense-filter-to');
-  let records = [];
-
-  const applyFilters = () => {
-    const from = fromInput.value;
-    const to = toInput.value;
-    const filtered = records.filter(r => {
-      if (from && r.date < from) return false;
-      if (to && r.date > to) return false;
-      return true;
+  const renderList = (filtered) => {
+    const wrap = document.getElementById('exp-list-wrap');
+    if (!filtered.length) {
+      wrap.innerHTML = `<div class="empty-state"><div class="icon">&#128184;</div><p>No hay gastos en este rango.</p></div>`;
+      return;
+    }
+    const sorted = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    wrap.innerHTML = `<ul class="tx-list">${sorted.map(r => expenseItem(r)).join('')}</ul>`;
+    Swipe.init(wrap, async el => {
+      await Expense.delete(parseInt(el.dataset.id));
+      Toast.success('Gasto eliminado');
+      renderExpensePage();
+      if (App.pg === 'dashboard') renderDashboard();
     });
-    renderExpenseList(filtered);
   };
 
-  fromInput.addEventListener('change', applyFilters);
-  toInput.addEventListener('change', applyFilters);
-
-  Expense.getAll().then(all => {
-    records = all;
-    const totals = records.reduce((acc, r) => {
-      if (r.type === 'gold') acc.gold += parseFloat(r.goldAmount || 0);
-      else acc.brl += parseFloat(r.amount || 0);
-      return acc;
-    }, { brl: 0, gold: 0 });
-
-    document.getElementById('expense-total-brl').textContent = `R$ ${totals.brl.toFixed(2).replace('.', ',')}`;
-    document.getElementById('expense-total-gold').textContent = `${totals.gold.toFixed(3)} g`;
-    applyFilters();
-  });
+  const from = document.getElementById('exp-from');
+  const to = document.getElementById('exp-to');
+  const apply = () => {
+    renderList(records.filter(r => {
+      if (from.value && r.date < from.value) return false;
+      if (to.value && r.date > to.value) return false;
+      return true;
+    }));
+  };
+  from.addEventListener('change', apply);
+  to.addEventListener('change', apply);
+  apply();
+  Budget.autoAlert(records, currentMonthKey());
 }
 
-function renderExpenseList(filtered) {
-  const list = document.getElementById('expense-list');
-  if (filtered.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="icon">&#128184;</div>
-        <p>No hay gastos en este rango.<br>Toca el botón + para agregar.</p>
-      </div>`;
-    return;
-  }
-
-  const sorted = [...filtered].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  list.innerHTML = sorted.map(r => {
-    const icon = Expense.CATEGORIES.find(c => c.name === r.category)?.icon || '&#128203;';
-    return `
-      <li class="transaction-item">
-        <div class="transaction-icon" style="background: rgba(239,68,68,0.12)">${icon}</div>
-        <div class="transaction-info">
+function expenseItem(r) {
+  const isGold = Gold.isGold(r);
+  const value = isGold
+    ? App.mask(fmtGrams(r.goldAmount))
+    : App.mask(fmtBRL(r.amount));
+  return `
+    <li class="tx-item">
+      <div class="tx-swipe-bg">&#128465;</div>
+      <div class="tx-main" data-id="${r.id}">
+        <div class="tx-icon" style="background:var(--negative-bg)">${Expense.icon(r.category)}</div>
+        <div class="tx-info">
           <div class="name">${esc(r.title || 'Gasto')}</div>
           <div class="date">${formatDate(r.date)} · ${esc(r.category || 'Otros')}</div>
         </div>
-        <div class="transaction-amount expense">
-          ${r.type === 'gold'
-            ? `<span class="chip chip-gold">${parseFloat(r.goldAmount).toFixed(3)} g</span>`
-            : `R$ ${parseFloat(r.amount).toFixed(2).replace('.', ',')}`}
-        </div>
-        <button class="btn btn-sm btn-outline expense-delete" data-id="${r.id}">&#128465;</button>
-      </li>
-    `;
-  }).join('');
-
-  list.querySelectorAll('.expense-delete').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      await Expense.delete(parseInt(btn.dataset.id));
-      Toast.success('Gasto eliminado');
-      renderExpensePage();
-      renderDashboard();
-    });
-  });
+        <div class="tx-amount expense">${isGold ? `<span class="chip chip-gold">${value}</span>` : value}</div>
+      </div>
+    </li>`;
 }
 
 function showExpenseModal() {
-  const modal = document.getElementById('modal');
-  document.getElementById('modal-title').textContent = 'Nuevo gasto';
-  document.getElementById('modal-body').innerHTML = `
+  openSheet('Nuevo gasto', `
     <div class="form-group">
       <label>Categoría</label>
       <select id="expense-category">
@@ -188,13 +141,13 @@ function showExpenseModal() {
         <option value="gold">Oro (gramos)</option>
       </select>
     </div>
-    <div class="form-group" id="expense-field-brl">
+    <div class="form-group" id="exp-field-brl">
       <label>Monto (R$)</label>
-      <input type="number" id="expense-amount" step="0.01" placeholder="0.00">
+      <input type="number" id="expense-amount" step="0.01" placeholder="0,00" inputmode="decimal">
     </div>
-    <div class="form-group" style="display:none" id="expense-field-gold">
+    <div class="form-group hidden" id="exp-field-gold">
       <label>Gramos de oro</label>
-      <input type="number" id="expense-gold" step="0.001" placeholder="0.000">
+      <input type="number" id="expense-gold" step="0.001" placeholder="0,000" inputmode="decimal">
     </div>
     <div class="form-group">
       <label>Descripción</label>
@@ -204,35 +157,33 @@ function showExpenseModal() {
       <label>Fecha</label>
       <input type="date" id="expense-date" value="${new Date().toISOString().slice(0, 10)}">
     </div>
-    <button class="btn btn-primary" id="expense-save">Guardar gasto</button>
-  `;
+    <button class="btn btn-dark" id="expense-save">Guardar gasto</button>
+  `);
 
-  const typeSelect = document.getElementById('expense-type');
-  const toggleFields = () => {
-    const isGold = typeSelect.value === 'gold';
-    document.getElementById('expense-field-brl').style.display = isGold ? 'none' : 'block';
-    document.getElementById('expense-field-gold').style.display = isGold ? 'block' : 'none';
+  const typeSel = document.getElementById('expense-type');
+  const toggle = () => {
+    const isGold = typeSel.value === 'gold';
+    document.getElementById('exp-field-brl').classList.toggle('hidden', isGold);
+    document.getElementById('exp-field-gold').classList.toggle('hidden', !isGold);
   };
-  typeSelect.addEventListener('change', toggleFields);
+  typeSel.addEventListener('change', toggle);
 
   document.getElementById('expense-save').addEventListener('click', async () => {
+    const isGold = typeSel.value === 'gold';
     const category = document.getElementById('expense-category').value;
-    const type = typeSelect.value;
     const title = document.getElementById('expense-title').value.trim() || 'Gasto';
     const date = document.getElementById('expense-date').value;
-
-    if (type === 'gold') {
-      const grams = parseFloat(document.getElementById('expense-gold').value);
-      if (!grams || grams <= 0) { Toast.error('Ingresa gramos válidos'); return; }
-      await Expense.add({ type, goldAmount: grams, title, date, category });
-    } else {
-      const amount = parseFloat(document.getElementById('expense-amount').value);
-      if (!amount || amount <= 0) { Toast.error('Ingresa un monto válido'); return; }
-      await Expense.add({ type, amount, title, date, category });
-    }
+    const val = parseFloat(document.getElementById(isGold ? 'expense-gold' : 'expense-amount').value);
+    if (!val || val <= 0) { Toast.error('Ingresa un monto válido'); return; }
+    await Expense.add({
+      type: isGold ? 'gold' : 'brl',
+      category, title, date,
+      goldAmount: isGold ? val : null,
+      amount: isGold ? null : val
+    });
+    closeSheet();
     Toast.success('Gasto guardado');
-    closeModal();
     renderExpensePage();
-    renderDashboard();
+    if (App.pg === 'dashboard') renderDashboard();
   });
 }

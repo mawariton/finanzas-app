@@ -1,17 +1,22 @@
-const CACHE_NAME = 'finanzas-v1';
+const CACHE_NAME = 'finanzas-v2';
 const ASSETS = [
   '/',
   '/index.html',
   '/css/styles.css',
   '/js/db.js',
   '/js/gold.js',
+  '/js/budget.js',
+  '/js/csv.js',
+  '/js/charts.js',
   '/js/income.js',
   '/js/expenses.js',
   '/js/investments.js',
   '/js/loans.js',
-  '/js/charts.js',
+  '/js/dashboard.js',
   '/js/app.js',
-  '/manifest.json'
+  '/manifest.json',
+  '/icons/icon-192.png',
+  '/icons/icon-512.png'
 ];
 
 self.addEventListener('install', e => {
@@ -31,6 +36,7 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
   e.respondWith(
     caches.match(e.request).then(r => r || fetch(e.request))
   );

@@ -8,133 +8,115 @@ const Investment = {
     { name: 'Plazo fijo', icon: '&#128184;' },
     { name: 'Otro', icon: '&#128203;' }
   ],
-
+  icon(name) {
+    return (Investment.TYPES.find(t => t.name === name) || Investment.TYPES[Investment.TYPES.length - 1]).icon;
+  },
   async add(data) {
     data.date = data.date || new Date().toISOString().slice(0, 10);
     return DB.add(StoreNames.INVESTMENTS, data);
   },
-
   async getAll() {
     return DB.getAll(StoreNames.INVESTMENTS);
   },
-
   async update(id, data) {
-    const record = await DB.get(StoreNames.INVESTMENTS, id);
-    if (!record) return;
-    await DB.put(StoreNames.INVESTMENTS, { ...record, ...data });
+    const rec = await DB.get(StoreNames.INVESTMENTS, id);
+    if (rec) await DB.put(StoreNames.INVESTMENTS, { ...rec, ...data });
   },
-
   async delete(id) {
     return DB.delete(StoreNames.INVESTMENTS, id);
   },
-
-  calculate(result) {
-    const invested = parseFloat(result.investedAmount || 0);
-    const current = parseFloat(result.currentAmount || 0);
-    const diff = current - invested;
-    const percent = invested > 0 ? (diff / invested) * 100 : 0;
-    return { invested, current, diff, percent };
+  calc(rec) {
+    const invested = parseFloat(rec.investedAmount) || 0;
+    const current = parseFloat(rec.currentAmount) || 0;
+    return {
+      invested, current,
+      diff: current - invested,
+      pct: invested > 0 ? (current - invested) / invested * 100 : 0
+    };
   }
 };
 
-function renderInvestmentPage() {
+async function renderInvestmentPage() {
   const container = document.getElementById('page-investments');
+  const records = await Investment.getAll();
+
+  const agg = records.reduce((a, r) => {
+    const c = Investment.calc(r);
+    a.invested += c.invested;
+    a.current += c.current;
+    return a;
+  }, { invested: 0, current: 0 });
+  const diff = agg.current - agg.invested;
+  const pct = agg.invested > 0 ? diff / agg.invested * 100 : 0;
+
   container.innerHTML = `
-    <div class="card">
-      <div class="card-header"><h3>Inversiones</h3></div>
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-value" id="inv-total-invested">R$ 0,00</div>
-          <div class="stat-label">Total invertido</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-value" id="inv-total-current">R$ 0,00</div>
-          <div class="stat-label">Valor actual</div>
-        </div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value">${App.mask(fmtBRL(agg.invested))}</div>
+        <div class="stat-label">Total invertido</div>
       </div>
-      <div class="stat-card" style="margin-top:12px">
-        <div class="stat-value" id="inv-total-profit">R$ 0,00 (0%)</div>
-        <div class="stat-label">Ganancia / Pérdida total</div>
+      <div class="stat-card">
+        <div class="stat-value">${App.mask(fmtBRL(agg.current))}</div>
+        <div class="stat-label">Valor actual</div>
       </div>
     </div>
-    <div id="investment-list"></div>
+    <div class="card" style="margin-top:14px">
+      <div class="stat-value ${diff >= 0 ? 'stat-positive' : 'stat-negative'}">${App.mask((diff >= 0 ? '+' : '') + fmtBRL(diff))} (${diff >= 0 ? '+' : ''}${pct.toFixed(1)}%)</div>
+      <div class="stat-label">Ganancia / pérdida</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>Portafolio</h3></div>
+      ${records.length === 0 ? `
+        <div class="empty-state"><div class="icon">&#128200;</div><p>Sin inversiones registradas.</p></div>` : records.map(r => invCard(r)).join('')}
+    </div>
   `;
 
-  Investment.getAll().then(records => {
-    const list = document.getElementById('investment-list');
-    if (records.length === 0) {
-      list.innerHTML = `
-        <div class="card">
-          <div class="empty-state">
-            <div class="icon">&#128178;</div>
-            <p>No tienes inversiones registradas.<br>Toca el botón + para agregar.</p>
-          </div>
-        </div>`;
-      return;
-    }
-
-    let totalInvested = 0;
-    let totalCurrent = 0;
-
-    list.innerHTML = records.map(r => {
-      const calc = Investment.calculate(r);
-      totalInvested += calc.invested;
-      totalCurrent += calc.current;
-      const icon = Investment.TYPES.find(t => t.name === r.type)?.icon || '&#128203;';
-      const color = calc.diff >= 0 ? 'stat-positive' : 'stat-negative';
-      return `
-        <div class="card">
-          <div class="transaction-item" style="border:none; padding:0">
-            <div class="transaction-icon" style="background: rgba(37,99,235,0.15)">${icon}</div>
-            <div class="transaction-info">
-              <div class="name">${esc(r.name || 'Inversión')}</div>
-              <div class="date">${r.type || ''} · desde ${formatDate(r.date)}</div>
-            </div>
-            <div style="text-align:right">
-              <div class="${color}" style="font-weight:600">${calc.diff >= 0 ? '+' : ''}${calc.diff.toFixed(2)}</div>
-              <div class="stat-label">${calc.percent >= 0 ? '+' : ''}${calc.percent.toFixed(1)}%</div>
-            </div>
-          </div>
-          <div style="display:flex; justify-content:space-between; margin-top:8px; padding-top:8px; border-top:1px solid var(--border); font-size:0.85rem">
-            <span class="stat-label">Invertido: R$ ${calc.invested.toFixed(2)}</span>
-            <span class="stat-label">Actual: R$ ${calc.current.toFixed(2)}</span>
-          </div>
-          <div style="display:flex; gap:8px; margin-top:12px">
-            <button class="btn btn-sm btn-outline inv-update" data-id="${r.id}">&#9998; Actualizar</button>
-            <button class="btn btn-sm btn-danger inv-delete" data-id="${r.id}">&#128465; Eliminar</button>
-          </div>
-        </div>`;
-    }).join('');
-
-    const totalDiff = totalCurrent - totalInvested;
-    const totalPct = totalInvested > 0 ? (totalDiff / totalInvested) * 100 : 0;
-    const color = totalDiff >= 0 ? 'stat-positive' : 'stat-negative';
-
-    document.getElementById('inv-total-invested').textContent = `R$ ${totalInvested.toFixed(2).replace('.', ',')}`;
-    document.getElementById('inv-total-current').textContent = `R$ ${totalCurrent.toFixed(2).replace('.', ',')}`;
-    document.getElementById('inv-total-profit').innerHTML = `<span class="${color}">${totalDiff >= 0 ? '+' : ''}R$ ${totalDiff.toFixed(2).replace('.', ',')} (${totalPct >= 0 ? '+' : ''}${totalPct.toFixed(1)}%)</span>`;
-
-    list.querySelectorAll('.inv-update').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const record = records.find(r => r.id === parseInt(btn.dataset.id));
-        if (record) showInvestmentModal(record);
-      });
+  container.querySelectorAll('.inv-update').forEach(b => {
+    b.addEventListener('click', () => {
+      const rec = records.find(r => r.id === parseInt(b.dataset.id));
+      if (rec) showInvestmentModal(rec);
     });
-    list.querySelectorAll('.inv-delete').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        await Investment.delete(parseInt(btn.dataset.id));
-        Toast.success('Inversión eliminada');
-        renderInvestmentPage();
-        renderDashboard();
-      });
+  });
+  container.querySelectorAll('.inv-delete').forEach(b => {
+    b.addEventListener('click', async () => {
+      await Investment.delete(parseInt(b.dataset.id));
+      Toast.success('Inversión eliminada');
+      renderInvestmentPage();
+      if (App.pg === 'dashboard') renderDashboard();
     });
   });
 }
 
+function invCard(r) {
+  const c = Investment.calc(r);
+  const cls = c.diff >= 0 ? 'stat-positive' : 'stat-negative';
+  return `
+    <div style="padding:14px 0; border-bottom:1px solid var(--border)">
+      <div style="display:flex; align-items:center; gap:12px">
+        <div class="tx-icon">${Investment.icon(r.type)}</div>
+        <div style="flex:1; min-width:0">
+          <div class="name" style="font-weight:600; font-size:0.95rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis">${esc(r.name || 'Inversión')}</div>
+          <div class="date" style="font-size:0.75rem; color:var(--text-muted)">${esc(r.type || '')} · desde ${formatDate(r.date)}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="${cls}" style="font-weight:650">${App.mask((c.diff >= 0 ? '+' : '') + c.diff.toFixed(2))}</div>
+          <div style="font-size:0.75rem; color:var(--text-muted)">${c.pct >= 0 ? '+' : ''}${c.pct.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div class="inv-foot">
+        <span>Invertido: ${App.mask(fmtBRL(c.invested))}</span>
+        <span>Actual: ${App.mask(fmtBRL(c.current))}</span>
+      </div>
+      <div class="inv-actions">
+        <button class="btn btn-sm btn-ghost inv-update" data-id="${r.id}">&#9998; Actualizar</button>
+        <button class="btn btn-sm btn-danger inv-delete" data-id="${r.id}">Eliminar</button>
+      </div>
+    </div>`;
+}
+
 function showInvestmentModal(record = null) {
-  const modal = document.getElementById('modal');
-  document.getElementById('modal-title').textContent = record ? 'Actualizar inversión' : 'Nueva inversión';
-  document.getElementById('modal-body').innerHTML = `
+  openSheet(record ? 'Actualizar inversión' : 'Nueva inversión', `
     <div class="form-group">
       <label>Tipo</label>
       <select id="inv-type">
@@ -143,22 +125,22 @@ function showInvestmentModal(record = null) {
     </div>
     <div class="form-group">
       <label>Nombre</label>
-      <input type="text" id="inv-name" value="${record ? esc(record.name) : ''}" placeholder="Ej: Petrobras, Bitcoin...">
+      <input type="text" id="inv-name" value="${record ? esc(record.name) : ''}" placeholder="Ej: Petrobras, Bitcoin">
     </div>
     <div class="form-group">
       <label>Monto invertido (R$)</label>
-      <input type="number" id="inv-invested" step="0.01" value="${record ? record.investedAmount : ''}" placeholder="0.00">
+      <input type="number" id="inv-invested" step="0.01" value="${record ? record.investedAmount : ''}" inputmode="decimal">
     </div>
     <div class="form-group">
       <label>Valor actual (R$)</label>
-      <input type="number" id="inv-current" step="0.01" value="${record ? record.currentAmount : ''}" placeholder="0.00">
+      <input type="number" id="inv-current" step="0.01" value="${record ? record.currentAmount : ''}" inputmode="decimal">
     </div>
     <div class="form-group">
       <label>Fecha</label>
       <input type="date" id="inv-date" value="${record ? record.date : new Date().toISOString().slice(0, 10)}">
     </div>
-    <button class="btn btn-primary" id="inv-save">${record ? 'Guardar cambios' : 'Agregar inversión'}</button>
-  `;
+    <button class="btn btn-dark" id="inv-save">${record ? 'Guardar cambios' : 'Agregar inversión'}</button>
+  `);
 
   document.getElementById('inv-save').addEventListener('click', async () => {
     const data = {
@@ -168,9 +150,7 @@ function showInvestmentModal(record = null) {
       currentAmount: parseFloat(document.getElementById('inv-current').value) || 0,
       date: document.getElementById('inv-date').value
     };
-
     if (data.investedAmount <= 0) { Toast.error('El monto invertido debe ser mayor a 0'); return; }
-
     if (record) {
       await Investment.update(record.id, data);
       Toast.success('Inversión actualizada');
@@ -178,8 +158,8 @@ function showInvestmentModal(record = null) {
       await Investment.add(data);
       Toast.success('Inversión agregada');
     }
-    closeModal();
+    closeSheet();
     renderInvestmentPage();
-    renderDashboard();
+    if (App.pg === 'dashboard') renderDashboard();
   });
 }

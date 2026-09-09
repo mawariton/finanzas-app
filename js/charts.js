@@ -1,188 +1,142 @@
 const Charts = {
-  _instances: {},
-
-  _destroy(key) {
-    if (Charts._instances[key]) {
-      Charts._instances[key].destroy();
-      delete Charts._instances[key];
-    }
-  },
-
-  _colors() {
+  PALETTE: ['#8a8f98', '#b8860b', '#5a8070', '#9a6a72', '#6a78a8', '#7a8f6a', '#8a6aa8', '#b08050', '#5c767a'],
+  _opts() {
     const dark = document.documentElement.getAttribute('data-theme') === 'dark';
     return {
-      text: dark ? '#94a3b8' : '#475569',
-      grid: dark ? 'rgba(148,163,184,0.1)' : 'rgba(71,85,105,0.1)',
-      palette: ['#3b82f6', '#f59e0b', '#22c55e', '#ef4444', '#8b5cf6', '#06b6d4', '#f43f5e', '#84cc16', '#f97316']
+      text: dark ? '#a1a1a6' : '#6e6e73',
+      grid: dark ? 'rgba(161,161,166,0.12)' : 'rgba(110,110,115,0.12)',
+      bar: dark ? 'rgba(245,245,247,0.65)' : 'rgba(28,28,30,0.55)',
+      ink: dark ? '#f5f5f7' : '#1c1c1e',
+      gold: dark ? '#d4af37' : '#b8860b'
     };
   },
 
-  async renderExpensePie(containerId, records) {
-    const el = document.getElementById(containerId);
-    if (!el) return;
-    Charts._destroy(containerId);
+  _fit(canvas) {
+    const parent = canvas.parentElement;
+    const cssW = parent.clientWidth;
+    const cssH = parent.clientHeight || 200;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    canvas.width = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return { ctx, w: cssW, h: cssH };
+  },
 
-    const c = Charts._colors();
-    const byCat = {};
-
-    for (const r of records) {
-      const cat = r.category || 'Otros';
-      const value = r.type === 'gold'
-        ? await Gold.goldToBRL(parseFloat(r.goldAmount || 0))
-        : parseFloat(r.amount || 0);
-      if (!byCat[cat]) byCat[cat] = 0;
-      byCat[cat] += value;
-    }
-
-    const entries = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
-    if (entries.length === 0) {
-      el.innerHTML = '<div class="empty-state"><p>Sin gastos</p></div>';
+  donut(canvas, items, centerLabel) {
+    const { ctx, w, h } = Charts._fit(canvas);
+    ctx.clearRect(0, 0, w, h);
+    const total = items.reduce((s, it) => s + (it.value || 0), 0);
+    if (total <= 0) {
+      ctx.fillStyle = Charts._opts().text;
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Sin datos', w / 2, h / 2);
       return;
     }
 
-    const labels = entries.map(e => e[0]);
-    const data = entries.map(e => Math.round(e[1] * 100) / 100);
-    const backgroundColors = data.map((_, i) => c.palette[i % c.palette.length]);
+    const cx = w / 2, cy = h / 2;
+    const R = Math.min(w, h) / 2 - 18;
+    const r = R * 0.66;
+    const start = -Math.PI / 2;
 
-    Charts._instances[containerId] = new Chart(el, {
-      type: 'doughnut',
-      data: {
-        labels: labels.map(l => {
-          const cat = Expense.CATEGORIES.find(x => x.name === l);
-          return cat ? cat.icon + ' ' + cat.name : l;
-        }),
-        datasets: [{
-          data,
-          backgroundColor: backgroundColors,
-          borderWidth: 2,
-          borderColor: 'transparent'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: {
-              color: c.text,
-              boxWidth: 12,
-              padding: 10
-            }
-          }
-        }
-      }
+    let angle = start;
+    items.forEach((it, idx) => {
+      const frac = (it.value || 0) / total;
+      const a0 = angle;
+      const a1 = angle + frac * Math.PI * 2;
+      angle = a1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, R, a0, a1);
+      ctx.arc(cx, cy, r, a1, a0, true);
+      ctx.closePath();
+      ctx.fillStyle = it.color || Charts.PALETTE[idx % Charts.PALETTE.length];
+      ctx.fill();
     });
+
+    ctx.fillStyle = Charts._opts().ink;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '600 15px sans-serif';
+    ctx.fillText(centerLabel || '', cx, cy - 8);
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = Charts._opts().text;
+    ctx.fillText(total.toLocaleString('pt-BR') + ' BRL', cx, cy + 12);
+
+    Charts._legend(canvas, items);
   },
 
-  async renderMonthlyBar(containerId, records, type = 'income') {
-    const el = document.getElementById(containerId);
-    if (!el) return;
-    Charts._destroy(containerId);
-
-    const c = Charts._colors();
-    const byMonth = {};
-
-    for (const r of records) {
-      if (!r.date) continue;
-      const key = r.date.slice(0, 7);
-      const value = r.type === 'gold'
-        ? await Gold.goldToBRL(parseFloat(r.goldAmount || 0))
-        : parseFloat(r.amount || 0);
-      if (!byMonth[key]) byMonth[key] = 0;
-      byMonth[key] += value;
-    }
-
-    const sortedKeys = Object.keys(byMonth).sort();
-    const lastMonths = sortedKeys.slice(-6);
-
-    const monthNames = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    const labels = lastMonths.map(k => {
-      const [, m] = k.split('-');
-      return monthNames[parseInt(m) - 1] || k;
-    });
-    const data = lastMonths.map(k => Math.round(byMonth[k] * 100) / 100);
-
-    const color = type === 'income' ? '#22c55e' : '#ef4444';
-
-    Charts._instances[containerId] = new Chart(el, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: type === 'income' ? 'Ingresos' : 'Gastos',
-          data,
-          backgroundColor: color + 'cc',
-          borderRadius: 6
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false }
-        },
-        scales: {
-          x: {
-            ticks: { color: c.text },
-            grid: { display: false }
-          },
-          y: {
-            ticks: {
-              color: c.text,
-              callback: v => 'R$ ' + v.toFixed(0)
-            },
-            grid: { color: c.grid }
-          }
-        }
-      }
-    });
-  },
-
-  async renderInvestmentDoughnut(containerId, records) {
-    const el = document.getElementById(containerId);
-    if (!el) return;
-    Charts._destroy(containerId);
-
-    const c = Charts._colors();
-    const byType = {};
-
-    for (const r of records) {
-      const t = r.type || 'Otro';
-      if (!byType[t]) byType[t] = 0;
-      byType[t] += parseFloat(r.currentAmount || 0);
-    }
-
-    const entries = Object.entries(byType);
-    if (entries.length === 0) {
-      el.innerHTML = '<div class="empty-state"><p>Sin inversiones</p></div>';
+  bars(canvas, labels, values, highlightIndex) {
+    const { ctx, w, h } = Charts._fit(canvas);
+    ctx.clearRect(0, 0, w, h);
+    const o = Charts._opts();
+    if (!labels.length) {
+      ctx.fillStyle = o.text;
+      ctx.font = '13px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('Sin datos', w / 2, h / 2);
       return;
     }
 
-    const labels = entries.map(e => e[0]);
-    const data = entries.map(e => Math.round(e[1] * 100) / 100);
+    const max = Math.max(...values, 1);
+    const padL = 4, padR = 4, padT = 18, padB = 26;
+    const chartW = w - padL - padR;
+    const chartH = h - padT - padB;
+    const slot = chartW / labels.length;
+    const barW = Math.min(slot * 0.56, 42);
 
-    Charts._instances[containerId] = new Chart(el, {
-      type: 'pie',
-      data: {
-        labels,
-        datasets: [{
-          data,
-          backgroundColor: data.map((_, i) => c.palette[i % c.palette.length]),
-          borderWidth: 2,
-          borderColor: 'transparent'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'bottom',
-            labels: { color: c.text, boxWidth: 12, padding: 10 }
-          }
-        }
-      }
+    for (let i = 0; i < labels.length; i++) {
+      const x = padL + slot * i + (slot - barW) / 2;
+      const bh = (values[i] / max) * chartH;
+      const y = padT + chartH - bh;
+      const isHi = highlightIndex != null && i === highlightIndex;
+
+      ctx.fillStyle = isHi ? o.gold : o.bar;
+      Charts._roundRect(ctx, x, y, barW, Math.max(bh, 2), 6);
+      ctx.fill();
+
+      ctx.fillStyle = o.text;
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(labels[i], x + barW / 2, h - 8);
+    }
+
+    ctx.fillStyle = o.text;
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('R$', 2, 12);
+  },
+
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  },
+
+  _legend(canvas, items) {
+    const parent = canvas.parentElement;
+    let legend = parent.querySelector('.chart-legend');
+    if (!legend) {
+      legend = document.createElement('div');
+      legend.className = 'chart-legend';
+      parent.appendChild(legend);
+    }
+    const existing = parent.querySelectorAll('.chart-legend .leg-item');
+    existing.forEach(e => e.remove());
+    items.forEach((it, idx) => {
+      const item = document.createElement('span');
+      item.className = 'leg-item';
+      item.innerHTML = `<span class="leg-dot" style="background:${it.color || Charts.PALETTE[idx % Charts.PALETTE.length]}"></span>${esc(it.label)}`;
+      legend.appendChild(item);
     });
   }
 };
