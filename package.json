@@ -15,6 +15,7 @@
     "live-server": "^1.2.2"
   },
   "dependencies": {
+    "@capacitor-community/sqlite": "^6.0.2",
     "@capacitor/android": "^6.2.2"
   }
 }
