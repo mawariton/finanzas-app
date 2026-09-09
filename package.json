@@ -1,0 +1,13 @@
+{
+  "name": "finanzas-app",
+  "version": "1.0.0",
+  "description": "Control de finanzas personales - BRL y Oro",
+  "scripts": {
+    "dev": "live-server . --port=3000 --wait=200",
+    "start": "live-server . --port=3000 --no-browser",
+    "serve": "live-server . --port=3000 --no-browser"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2"
+  }
+}

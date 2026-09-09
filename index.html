@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>FinanzaPersonal</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header id="topbar">
+      <button id="menu-toggle" aria-label="Menu">&#9776;</button>
+      <h1 id="page-title">Dashboard</h1>
+      <button id="theme-toggle" aria-label="Cambiar tema">&#9789;</button>
+    </header>
+
+    <nav id="sidebar" class="closed">
+      <div class="sidebar-header">
+        <h2>&#128176; FinanzaPersonal</h2>
+        <button id="sidebar-close">&times;</button>
+      </div>
+      <ul>
+        <li data-page="dashboard" class="active">&#128200; Dashboard</li>
+        <li data-page="income">&#128176; Ingresos</li>
+        <li data-page="expenses">&#128184; Gastos</li>
+        <li data-page="investments">&#128178; Inversiones</li>
+        <li data-page="loans">&#128179; Préstamos</li>
+        <li data-page="gold">&#129351; Oro</li>
+        <li data-page="settings">&#9881; Configuración</li>
+      </ul>
+    </nav>
+    <div id="sidebar-overlay" class="hidden"></div>
+
+    <main id="content">
+      <section id="page-dashboard" class="page active"></section>
+      <section id="page-income" class="page"></section>
+      <section id="page-expenses" class="page"></section>
+      <section id="page-investments" class="page"></section>
+      <section id="page-loans" class="page"></section>
+      <section id="page-gold" class="page"></section>
+      <section id="page-settings" class="page"></section>
+    </main>
+
+    <button id="fab" aria-label="Agregar">&#43;</button>
+
+    <div id="modal-overlay" class="hidden">
+      <div id="modal">
+        <div id="modal-header">
+          <h3 id="modal-title"></h3>
+          <button id="modal-close">&times;</button>
+        </div>
+        <div id="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="toast-container"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="js/db.js"></script>
+  <script src="js/gold.js"></script>
+  <script src="js/income.js"></script>
+  <script src="js/expenses.js"></script>
+  <script src="js/investments.js"></script>
+  <script src="js/loans.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
