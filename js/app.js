@@ -295,6 +295,8 @@ const Swipe = {
       if (!lockHorizontal) {
         el.style.transition = 'none';
         el.style.transform = dx < 0 ? `translateX(${Math.max(dx, -84)}px)` : 'translateX(0)';
+        const parent = el.parentElement;
+        if (parent) parent.classList.toggle('swiped', dx < -20);
       }
     });
 
@@ -304,7 +306,9 @@ const Swipe = {
       el.style.transform = '';
       const swiped = dx < -40;
       el.classList.toggle('swiped', swiped);
-      const bg = el.parentElement.querySelector('.tx-swipe-bg');
+      const parent = el.parentElement;
+      if (parent) parent.classList.toggle('swiped', swiped);
+      const bg = parent ? parent.querySelector('.tx-swipe-bg') : null;
       if (bg) bg.style.pointerEvents = swiped ? 'auto' : 'none';
     };
 
@@ -321,7 +325,11 @@ const Swipe = {
     }
   },
   closeAll(scopeEl) {
-    scopeEl.querySelectorAll('.tx-main.swiped').forEach(el => el.classList.remove('swiped'));
+    scopeEl.querySelectorAll('.tx-item.swiped, .tx-main.swiped').forEach(el => {
+      el.classList.remove('swiped');
+      const rest = el.classList.contains('tx-main') ? el.parentElement : null;
+      if (rest) rest.classList.remove('swiped');
+    });
   }
 };
 
