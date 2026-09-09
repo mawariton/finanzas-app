@@ -10,6 +10,7 @@ async function renderDashboard() {
     DB.getAll(StoreNames.LOANS),
     Gold.getPricePerGram()
   ]);
+  const includeInvestments = await DB.getSetting('includeInvestments', false);
 
   const ym = currentMonthKey();
 
@@ -21,8 +22,10 @@ async function renderDashboard() {
   const totalOutBRL = sum(expenses, brlOf);
   const totalInGold = sum(incomes, goldOf);
   const totalOutGold = sum(expenses, goldOf);
-  const netBRL = totalInBRL - totalOutBRL;
-  const netGold = totalInGold - totalOutGold;
+  const invBRL = sum(investments, r => parseFloat(r.investedAmount) || 0);
+  const invGold = sum(investments, r => (parseFloat(r.investedAmount) || 0) / goldPrice);
+  const netBRL = totalInBRL - totalOutBRL - (includeInvestments ? invBRL : 0);
+  const netGold = totalInGold - totalOutGold - (includeInvestments ? invGold : 0);
 
   const monthIn = sum(incomes.filter(i => monthKey(i.date) === ym), brlOf);
   const monthOut = sum(expenses.filter(e => monthKey(e.date) === ym), brlOf);
@@ -196,13 +199,15 @@ async function renderDashboard() {
 /* ============ Página Oro ============ */
 async function renderGoldPage() {
   const container = document.getElementById('page-gold');
-  const [incomes, expenses, price] = await Promise.all([
+  const [incomes, expenses, investments, price] = await Promise.all([
     DB.getAll(StoreNames.INCOMES),
     DB.getAll(StoreNames.EXPENSES),
+    DB.getAll(StoreNames.INVESTMENTS),
     Gold.getPricePerGram()
   ]);
+  const includeInvestments = await DB.getSetting('includeInvestments', false);
 
-  let inGold = 0, outGold = 0;
+  let inGold = 0, outGold = 0, invGold = 0;
   const goldTx = [];
   for (const inc of incomes) {
     inGold += Gold.isGold(inc) ? (parseFloat(inc.goldAmount) || 0) : (parseFloat(inc.amount) || 0) / price;
@@ -212,7 +217,10 @@ async function renderGoldPage() {
     outGold += Gold.isGold(exp) ? (parseFloat(exp.goldAmount) || 0) : (parseFloat(exp.amount) || 0) / price;
     goldTx.push({ ...exp, kind: 'expense' });
   }
-  const netGold = inGold - outGold;
+  for (const inv of investments) {
+    invGold += (parseFloat(inv.investedAmount) || 0) / price;
+  }
+  const netGold = inGold - outGold - (includeInvestments ? invGold : 0);
   goldTx.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   const recentGold = goldTx.slice(0, 8);
 
@@ -310,6 +318,7 @@ async function renderSettingsPage() {
   const container = document.getElementById('page-settings');
   const price = await Gold.getPricePerGram();
   const cfg = await Budget.get();
+  const iconTheme = await Icon.current();
 
   container.innerHTML = `
     <div class="card">
@@ -327,6 +336,26 @@ async function renderSettingsPage() {
           <div><label>Precio del oro</label><div class="si-desc">R$ por gramo</div></div>
           <input type="number" id="set-gold" step="0.01" value="${price}" style="width:110px; padding:10px; border-radius:12px; border:1px solid var(--border); background:var(--bg-input); color:var(--text); text-align:right">
         </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>Icono de la app</h3></div>
+      <div class="icon-grid">
+        ${Icon.themes.map(t => `
+          <button class="icon-opt ${iconTheme === t.id ? 'selected' : ''}" data-icon="${t.id}">
+            <img src="${t.file}" alt="${t.label}">
+            <span>${t.label}</span>
+          </button>`).join('')}
+      </div>
+      <div class="form-hint">Cambia el icono y aplícalo desde tu pantalla de inicio.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3>Balance</h3></div>
+      <div class="settings-item">
+        <div><label>Restar inversiones del balance</label><div class="si-desc">Trata el dinero invertido como gastado</div></div>
+        <label class="switch"><input type="checkbox" id="set-inv" ${App.state.includeInvestments ? 'checked' : ''}><span class="slider"></span></label>
       </div>
     </div>
 
@@ -381,6 +410,19 @@ async function renderSettingsPage() {
       const p = parseFloat(e.target.value);
       if (p > 0) { await Gold.setPricePerGram(p); Toast.success('Precio actualizado'); }
     }, 600);
+  });
+
+  document.getElementById('set-inv').addEventListener('change', async e => {
+    App.state.includeInvestments = e.target.checked;
+    await DB.setSetting('includeInvestments', App.state.includeInvestments);
+  });
+
+  document.querySelectorAll('#page-settings [data-icon]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await Icon.apply(btn.dataset.icon);
+      Toast.success('Icono actualizado');
+      document.querySelectorAll('#page-settings [data-icon]').forEach(x => x.classList.toggle('selected', x === btn));
+    });
   });
 
   document.getElementById('budget-save').addEventListener('click', async () => {

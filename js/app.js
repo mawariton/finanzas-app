@@ -29,9 +29,53 @@ function currentMonthKey() {
   return new Date().toISOString().slice(0, 7);
 }
 
+/* ============ App icon themes ============ */
+const Icon = {
+  themes: [
+    { id: 'cuarzo', label: 'Cuarzo', file: 'icons/icon-cuarzo.png' },
+    { id: 'esmeralda', label: 'Esmeralda', file: 'icons/icon-esmeralda.png' },
+    { id: 'zafiro', label: 'Zafiro', file: 'icons/icon-zafiro.png' }
+  ],
+
+  async current() {
+    const t = await DB.getSetting('iconTheme', 'cuarzo');
+    return Icon.themes.some(x => x.id === t) ? t : 'cuarzo';
+  },
+
+  async apply(theme) {
+    await DB.setSetting('iconTheme', theme);
+    const logo = document.getElementById('app-logo');
+    const found = Icon.themes.find(x => x.id === theme) || Icon.themes[0];
+    if (logo) logo.src = found.file;
+    const cap = typeof window !== 'undefined' ? window.Capacitor : null;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform() && typeof cap.nativePromise === 'function') {
+      try {
+        await cap.nativePromise('IconSwitcher', 'setTheme', { theme });
+      } catch (err) {
+        console.error('IconSwitcher failed:', err);
+      }
+    }
+  },
+
+  async syncOnStart() {
+    const theme = await Icon.current();
+    const logo = document.getElementById('app-logo');
+    const found = Icon.themes.find(x => x.id === theme) || Icon.themes[0];
+    if (logo) logo.src = found.file;
+    const cap = typeof window !== 'undefined' ? window.Capacitor : null;
+    if (cap && cap.isNativePlatform && cap.isNativePlatform() && typeof cap.nativePromise === 'function') {
+      try {
+        await cap.nativePromise('IconSwitcher', 'setTheme', { theme });
+      } catch (err) {
+        console.error('IconSwitcher init failed:', err);
+      }
+    }
+  }
+};
+
 /* ============ App state & shell ============ */
 const App = {
-  state: { theme: 'dark', hide: false },
+  state: { theme: 'dark', hide: false, includeInvestments: false },
   pg: 'dashboard',
 
   async init() {
@@ -40,10 +84,13 @@ const App = {
 
     const theme = await DB.getSetting('theme', 'dark');
     const hide = await DB.getSetting('hideAmounts', false);
+    const includeInvestments = await DB.getSetting('includeInvestments', false);
     App.state.theme = theme === 'light' ? 'light' : 'dark';
     App.state.hide = !!hide;
+    App.state.includeInvestments = !!includeInvestments;
     document.documentElement.setAttribute('data-theme', App.state.theme);
     App.syncHeaderButtons();
+    Icon.syncOnStart();
 
     App.bindHeader();
     App.bindTabs();
