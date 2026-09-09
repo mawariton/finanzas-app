@@ -246,7 +246,10 @@ const App = {
 };
 
 /* ============ Bottom sheet ============ */
+let sheetToken = 0;
+
 function openSheet(title, bodyHTML) {
+  sheetToken++;
   const root = document.getElementById('sheet-root');
   root.innerHTML = `
     <div class="sheet-backdrop"></div>
@@ -259,14 +262,15 @@ function openSheet(title, bodyHTML) {
 }
 
 function closeSheet() {
+  const token = sheetToken;
   const root = document.getElementById('sheet-root');
   const backdrop = root.querySelector('.sheet-backdrop');
   const sheet = root.querySelector('.sheet');
-  if (!sheet) { root.innerHTML = ''; return; }
+  if (!sheet) { if (token === sheetToken) root.innerHTML = ''; return; }
   backdrop.classList.add('closing');
   sheet.classList.add('closing');
   setTimeout(() => {
-    if (root.contains(sheet)) root.innerHTML = '';
+    if (token === sheetToken) root.innerHTML = '';
   }, 220);
 }
 

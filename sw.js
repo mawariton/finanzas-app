@@ -41,6 +41,14 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    caches.match(e.request).then(r => r || fetch(e.request))
+    fetch(e.request)
+      .then(res => {
+        const copy = res.clone();
+        if (res.ok && new URL(e.request.url).origin === self.location.origin) {
+          caches.open(CACHE_NAME).then(c => c.put(e.request, copy)).catch(() => {});
+        }
+        return res;
+      })
+      .catch(() => caches.match(e.request).then(r => r || new Response('', { status: 503 })))
   );
 });
