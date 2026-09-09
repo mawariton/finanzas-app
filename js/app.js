@@ -218,7 +218,9 @@ function closeSheet() {
   if (!sheet) { root.innerHTML = ''; return; }
   backdrop.classList.add('closing');
   sheet.classList.add('closing');
-  setTimeout(() => { root.innerHTML = ''; }, 220);
+  setTimeout(() => {
+    if (root.contains(sheet)) root.innerHTML = '';
+  }, 220);
 }
 
 /* ============ Swipe to delete ============ */
